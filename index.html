@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Appel Téléphonique</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin:0; background:#f0f0f0; }
+    header { background:#add8a4; padding:10px 20px; display:flex; align-items:center; }
+    header img { height:40px; margin-right:10px; }
+    header h1 { font-size:1.2rem; margin:0; }
+    nav { background:#f4f4f4; padding:8px 20px; display:flex; gap:10px; }
+    nav a { text-decoration:none; padding:6px 12px; background:#ddd; border-radius:4px; color:#333; }
+    nav a.active { background:#ffa500; color:#fff; }
+    .container { padding:20px; }
+    fieldset { border:1px solid #ccc; border-radius:6px; margin-bottom:20px; background:#fff; }
+    legend { padding:0 10px; font-weight:bold; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:15px; padding:15px; }
+    .full { grid-column: span 2; }
+    .form-group { display:flex; flex-direction:column; margin-bottom:10px; }
+    label { margin-bottom:4px; font-size:0.9rem; color:#555; }
+    input, select, textarea { padding:6px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; }
+    .actions { text-align:right; padding:0 15px 15px; }
+    button { padding:8px 16px; margin-left:10px; font-size:0.9rem; border:none; border-radius:4px; cursor:pointer; }
+    button.save { background:#28a745; color:#fff; }
+    button.create { background:#a4c3e4; color:#fff; }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="TOTEM1.png" alt="TOTEM1">
+    <h1>Appel Téléphonique </h1>
+  </header>
+  <nav>
+    <a href="#" class="active">Accueil</a>
+    <a href="#">Nouvel appel</a>
+    <a href="#">Recherche</a>
+    <button class="mappage" onclick="window.location.href='Mediation.html'">Médiation</button>
+    <a href="#">Déconnexion</a>
+  </nav>
+  <div class="container">
+    <fieldset>
+      <legend>Informations principales</legend>
+      <div class="grid2">
+        <div class="form-group">
+          <label for="date">Date</label>
+          <input type="datetime-local" id="date" name="date">
+        </div>
+        <div class="form-group">
+          <label for="statut">Statut de l'appel</label>
+          <select id="statut" name="statut">
+            <option>En cours</option>
+            <option>Clos</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="appelant">Appelant</label>
+          <input type="text" id="appelant">
+        </div>
+        <div class="form-group">
+          <label for="benevole">Bénévole</label>
+          <select id="benevole" name="benevole"></select>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Détails de l'appel</legend>
+      <div class="grid2">
+        <div class="form-group">
+          <label for="lieu_decouverte">Lieu de découverte</label>
+          <input type="text" id="lieu_decouverte">
+        </div>
+        <div class="form-group">
+          <label for="lieu_recuperation">Lieu de récupération</label>
+          <input type="text" id="lieu_recuperation">
+        </div>
+        <div class="form-group">
+          <label for="objet_appel">Objet de l'appel</label>
+          <textarea id="objet_appel" rows="2"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="suite_appel">Suite à donner</label>
+          <select id="suite_appel">
+            <option>Rappellera</option>
+            <option>À rappeler</option>
+          </select>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Fiche animal</legend>
+      <div class="grid2">
+        <div class="form-group">
+          <label for="espece">Espèce</label>
+          <select id="espece"></select>
+        </div>
+        <div class="form-group">
+          <label for="symptomes">Symptômes</label>
+          <select id="symptomes" multiple></select>
+        </div>
+        <div class="form-group full">
+          <label for="notes">Commentaires</label>
+          <textarea id="notes" rows="3"></textarea>
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="actions">
+      <button class="save">Enregistrer les modifications</button>
+      <button class="create">Créer fiche animal</button>
+    </div>
+  </div>
+</body>
+</html>
