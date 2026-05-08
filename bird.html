@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Chant des Oiseaux</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Cinzel+Decorative:wght@400&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#03050e; font-family:'Cormorant Garamond',serif; overflow:hidden; height:100dvh; width:100vw; }
+  canvas { position:fixed; inset:0; width:100%; height:100%; }
+
+  #hud { position:fixed; top:18px; right:18px; text-align:right; pointer-events:none; z-index:20; }
+  #hud-freq { font-size:22px; font-weight:300; color:rgba(255,255,255,0.75); letter-spacing:0.05em; }
+  #hud-note { font-size:13px; letter-spacing:0.3em; color:rgba(244,196,48,0.65); margin-top:3px; }
+  #hud-vol  { margin-top:7px; width:76px; height:2px; background:rgba(255,255,255,0.07); border-radius:2px; margin-left:auto; overflow:hidden; }
+  #hud-vol-fill { height:100%; background:linear-gradient(90deg,#4ecdc4,#f4c430); width:0%; border-radius:2px; transition:width 0.04s linear; }
+
+  #ui {
+    position:fixed; bottom:0; left:0; right:0;
+    padding:14px 14px 26px;
+    background:linear-gradient(transparent,rgba(0,0,0,0.82) 38%);
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+    z-index:20; pointer-events:none;
+  }
+  #title {
+    font-family:'Cinzel Decorative',serif;
+    font-size:clamp(11px,3vw,15px);
+    letter-spacing:0.38em; color:rgba(244,196,48,0.82);
+    text-shadow:0 0 22px rgba(244,196,48,0.28);
+  }
+  #controls { display:flex; gap:10px; pointer-events:all; flex-wrap:wrap; justify-content:center; }
+  .btn {
+    font-family:'Cormorant Garamond',serif; font-size:12px;
+    letter-spacing:0.22em; text-transform:uppercase;
+    background:rgba(0,0,0,0.45); border:1px solid rgba(244,196,48,0.35);
+    color:rgba(244,196,48,0.85); padding:9px 22px; cursor:pointer;
+    transition:all 0.22s; -webkit-tap-highlight-color:transparent;
+  }
+  .btn:active { background:rgba(244,196,48,0.12); border-color:rgba(244,196,48,0.8); }
+  .btn.lit    { background:rgba(244,196,48,0.14); border-color:#f4c430; box-shadow:0 0 16px rgba(244,196,48,0.22); }
+  .btn.red    { border-color:rgba(255,100,50,0.38); color:rgba(255,120,60,0.82); }
+  .btn.red:active { background:rgba(255,100,50,0.1); }
+
+  #style-row  { display:flex; gap:10px; align-items:center; pointer-events:all; flex-wrap:wrap; justify-content:center; }
+  .slbl       { font-size:9px; letter-spacing:0.28em; color:rgba(255,255,255,0.22); text-transform:uppercase; }
+  .sdot {
+    font-family:'Cormorant Garamond',serif; font-size:10px;
+    letter-spacing:0.18em; text-transform:uppercase;
+    color:rgba(244,196,48,0.32); border:none; background:none;
+    border-bottom:1px solid transparent; padding-bottom:1px;
+    cursor:pointer; transition:all 0.2s; -webkit-tap-highlight-color:transparent;
+  }
+  .sdot.on { color:rgba(244,196,48,0.92); border-color:rgba(244,196,48,0.55); }
+
+  #status { font-style:italic; font-size:11px; letter-spacing:0.16em; color:rgba(168,237,234,0.48); min-height:16px; text-align:center; max-width:340px; padding:0 10px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div id="hud-freq">— Hz</div>
+  <div id="hud-note">—</div>
+  <div id="hud-vol"><div id="hud-vol-fill"></div></div>
+</div>
+
+<div id="ui">
+  <div id="title">Chant des Oiseaux</div>
+  <div id="controls">
+    <button class="btn" id="btnListen">Écouter</button>
+    <button class="btn red" id="btnClear">Effacer</button>
+    <button class="btn" id="btnSave">Capturer</button>
+  </div>
+  <div id="style-row">
+    <span class="slbl">Style</span>
+    <button class="sdot on" data-s="0">Spectrographe</button>
+    <button class="sdot"    data-s="1">Plumes</button>
+    <button class="sdot"    data-s="2">Éclosion</button>
+    <button class="sdot"    data-s="3">Vague</button>
+  </div>
+  <div id="status">Appuyer sur Écouter puis autoriser le micro</div>
+</div>
+
+<script>
+// ── Canvas ─────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+
+function paintBg() {
+  const g = ctx.createLinearGradient(0,0,0,canvas.height);
+  g.addColorStop(0,   '#03050e');
+  g.addColorStop(0.6, '#070c1a');
+  g.addColorStop(1,   '#0a1020');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+}
+function resize() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  paintBg();
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Audio ───────────────────────────────────────────────────────
+let audioCtx, analyser, micSrc, freqData, timeData, bufLen;
+let listening = false, raf, drawStyle = 0, lastMark = 0;
+
+// ── UI ──────────────────────────────────────────────────────────
+const btnListen  = document.getElementById('btnListen');
+const btnClear   = document.getElementById('btnClear');
+const btnSave    = document.getElementById('btnSave');
+const status     = document.getElementById('status');
+const hudFreq    = document.getElementById('hud-freq');
+const hudNote    = document.getElementById('hud-note');
+const hudVolFill = document.getElementById('hud-vol-fill');
+
+// ── Colour helpers ───────────────────────────────────────────────
+function freqToHue(freq) {
+  const lo = Math.log2(80), hi = Math.log2(16000);
+  return Math.max(0,Math.min(1,(Math.log2(Math.max(freq,80))-lo)/(hi-lo))) * 300;
+}
+function frgba(freq,a=1){ return `hsla(${freqToHue(freq).toFixed(1)},88%,62%,${a})`; }
+
+const NOTES = ['Do','Do♯','Ré','Ré♯','Mi','Fa','Fa♯','Sol','Sol♯','La','La♯','Si'];
+function freqToNote(freq) {
+  if(!freq||freq<=0) return '—';
+  const n = Math.round(12*Math.log2(freq/440))+69;
+  return NOTES[((n%12)+12)%12]+(Math.floor(n/12)-1);
+}
+
+// ── Analysis ─────────────────────────────────────────────────────
+function dominantFreq() {
+  analyser.getByteFrequencyData(freqData);
+  const minBin = Math.ceil(80/(audioCtx.sampleRate/analyser.fftSize));
+  let peak=0, idx=minBin;
+  for(let i=minBin;i<bufLen;i++){ if(freqData[i]>peak){peak=freqData[i];idx=i;} }
+  const p=freqData[Math.max(0,idx-1)], n=freqData[Math.min(bufLen-1,idx+1)];
+  const d=p-2*peak+n;
+  const ref = d!==0 ? idx-0.5*(n-p)/d : idx;
+  return { freq: ref*(audioCtx.sampleRate/analyser.fftSize), volume: peak/255 };
+}
+function rms() {
+  analyser.getByteTimeDomainData(timeData);
+  let s=0;
+  for(let i=0;i<bufLen;i++){ const v=(timeData[i]-128)/128; s+=v*v; }
+  return Math.sqrt(s/bufLen);
+}
+
+// ── SPECTROGRAPHE ─────────────────────────────────────────────────
+// Trait continu qui défile : Y = fréquence (log), couleur = arc-en-ciel musical, épaisseur = volume
+const SPEED = 1.4;
+let specX=0, prevY=null;
+
+function drawSpectrograph(freq, vol, rmsVal) {
+  const h=canvas.height, topM=h*0.04, useH=h*0.76;
+
+  // Efface une fine bande devant pour l'effet défilement
+  ctx.fillStyle='rgba(3,5,14,0.28)';
+  ctx.fillRect(specX, 0, Math.ceil(SPEED)+2, h);
+
+  if(freq>80 && rmsVal>0.005) {
+    const lo=Math.log2(80), hi=Math.log2(16000);
+    const t = 1-Math.max(0,Math.min(1,(Math.log2(Math.max(freq,80))-lo)/(hi-lo)));
+    const y = topM + t*useH;
+    const hue = freqToHue(freq);
+    const lw  = 1.5 + vol*10;
+
+    if(prevY!==null) {
+      // Halo lumineux
+      ctx.save();
+      ctx.shadowBlur  = 18+vol*32;
+      ctx.shadowColor = `hsla(${hue.toFixed(0)},90%,60%,1)`;
+      ctx.strokeStyle = `hsla(${hue.toFixed(0)},88%,60%,${0.7+vol*0.3})`;
+      ctx.lineWidth   = lw;
+      ctx.lineCap='round';
+      ctx.beginPath();
+      ctx.moveTo(specX-SPEED, prevY);
+      ctx.lineTo(specX, y);
+      ctx.stroke();
+      ctx.restore();
+      // Cœur blanc brillant
+      ctx.save();
+      ctx.strokeStyle=`hsla(${hue.toFixed(0)},50%,96%,${0.3+vol*0.55})`;
+      ctx.lineWidth=Math.max(0.5,lw*0.22);
+      ctx.lineCap='round';
+      ctx.beginPath();
+      ctx.moveTo(specX-SPEED, prevY);
+      ctx.lineTo(specX, y);
+      ctx.stroke();
+      ctx.restore();
+    }
+    prevY=y;
+  } else {
+    prevY=null;
+  }
+
+  specX+=SPEED;
+  if(specX>=canvas.width) specX=0;
+}
+
+// ── Autres styles ─────────────────────────────────────────────────
+function freqToY(freq) {
+  const lo=Math.log2(80),hi=Math.log2(16000);
+  const t=1-Math.max(0,Math.min(1,(Math.log2(Math.max(freq,80))-lo)/(hi-lo)));
+  return canvas.height*0.04+t*canvas.height*0.72;
+}
+
+function drawFeather(freq,vol) {
+  const y=freqToY(freq)+(Math.random()-0.5)*35, x=Math.random()*canvas.width;
+  const len=14+vol*65, ang=(Math.random()-0.5)*1.0-Math.PI/2;
+  ctx.save(); ctx.translate(x,y); ctx.rotate(ang);
+  ctx.globalAlpha=0.65+vol*0.3; ctx.strokeStyle=frgba(freq,0.9); ctx.lineWidth=0.8;
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,-len); ctx.stroke();
+  const barbs=5+Math.floor(vol*9);
+  for(let i=0;i<barbs;i++){
+    const bt=i/barbs, bl=Math.sin(bt*Math.PI)*len*0.28;
+    ctx.globalAlpha=0.2+(1-bt)*0.35;
+    for(const s of[1,-1]){
+      ctx.beginPath(); ctx.moveTo(0,-len*bt);
+      ctx.quadraticCurveTo(s*bl*0.5,-len*bt-bl*0.15,s*bl,-len*bt);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+let bloomA=0;
+function drawBloom(freq,vol) {
+  const y=freqToY(freq)+(Math.random()-0.5)*40, x=Math.random()*canvas.width;
+  const r=5+vol*45, petals=4+Math.floor(freq/1100);
+  bloomA+=0.08;
+  ctx.save(); ctx.translate(x,y); ctx.rotate(bloomA);
+  ctx.globalAlpha=0.6+vol*0.35;
+  for(let i=0;i<petals;i++){
+    ctx.save(); ctx.rotate((i/petals)*Math.PI*2);
+    ctx.beginPath(); ctx.ellipse(0,-r*0.5,r*0.17,r*0.5,0,0,Math.PI*2);
+    ctx.fillStyle=frgba(freq,0.75); ctx.fill(); ctx.restore();
+  }
+  ctx.beginPath(); ctx.arc(0,0,r*0.12,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,245,100,0.95)'; ctx.fill();
+  ctx.restore();
+}
+
+let waveT=0;
+function drawWave(freq,vol) {
+  const cy=freqToY(freq), amp=7+vol*38;
+  const span=100+vol*70, cx=Math.random()*(canvas.width-span)+span/2;
+  waveT+=0.07;
+  ctx.save();
+  ctx.globalAlpha=0.5+vol*0.4;
+  ctx.strokeStyle=frgba(freq,1); ctx.lineWidth=1+vol*2.5;
+  ctx.shadowBlur=10+vol*18; ctx.shadowColor=frgba(freq,0.8);
+  ctx.beginPath();
+  for(let i=-span;i<=span;i++){
+    const wx=cx+i;
+    const wy=cy+Math.sin((i*freq/1600)+waveT)*amp*(1-(Math.abs(i)/span)**1.6);
+    i===-span?ctx.moveTo(wx,wy):ctx.lineTo(wx,wy);
+  }
+  ctx.stroke(); ctx.restore();
+}
+
+// ── Boucle principale ─────────────────────────────────────────────
+function loop(ts) {
+  if(!listening) return;
+  raf=requestAnimationFrame(loop);
+  const {freq,volume}=dominantFreq();
+  const r=rms();
+
+  hudVolFill.style.width=Math.min(100,r*380)+'%';
+  if(freq>80&&r>0.008){
+    hudFreq.textContent=Math.round(freq)+' Hz';
+    hudNote.textContent=freqToNote(freq);
+  } else {
+    hudFreq.textContent='— Hz'; hudNote.textContent='—';
+  }
+
+  if(drawStyle===0) {
+    drawSpectrograph(freq,volume,r);
+  } else if(freq>80&&r>0.012&&ts-lastMark>32) {
+    lastMark=ts;
+    if(drawStyle===1) drawFeather(freq,volume);
+    else if(drawStyle===2) drawBloom(freq,volume);
+    else if(drawStyle===3) drawWave(freq,volume);
+  }
+}
+
+// ── Démarrage micro ───────────────────────────────────────────────
+async function toggleListen() {
+  if(listening){
+    listening=false; cancelAnimationFrame(raf);
+    try{micSrc.disconnect();}catch(e){}
+    try{audioCtx.close();}catch(e){}
+    micSrc=null; audioCtx=null;
+    btnListen.textContent='Écouter'; btnListen.classList.remove('lit');
+    hudVolFill.style.width='0%';
+    status.textContent='En pause — toile préservée';
+    return;
+  }
+  status.textContent='Demande d\'accès au microphone…';
+  try {
+    const stream=await navigator.mediaDevices.getUserMedia({
+      audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},
+      video:false
+    });
+    audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    analyser=audioCtx.createAnalyser();
+    analyser.fftSize=8192; analyser.smoothingTimeConstant=0.8;
+    bufLen=analyser.frequencyBinCount;
+    freqData=new Uint8Array(bufLen); timeData=new Uint8Array(bufLen);
+    micSrc=audioCtx.createMediaStreamSource(stream);
+    micSrc.connect(analyser);
+    listening=true;
+    btnListen.textContent='Pause'; btnListen.classList.add('lit');
+    status.textContent='À l\'écoute — sifflez ou laissez les oiseaux peindre 🎶';
+    requestAnimationFrame(loop);
+  } catch(err) {
+    console.error(err);
+    if(err.name==='NotAllowedError'||err.name==='PermissionDeniedError')
+      status.textContent='⚠ Permission refusée — autorisez le micro dans les réglages du navigateur';
+    else if(err.name==='NotFoundError')
+      status.textContent='⚠ Aucun microphone détecté sur cet appareil';
+    else
+      status.textContent='⚠ Erreur : '+err.name;
+  }
+}
+
+// ── Boutons ───────────────────────────────────────────────────────
+btnListen.addEventListener('click', toggleListen);
+
+btnClear.addEventListener('click',()=>{
+  specX=0; prevY=null; paintBg();
+  status.textContent='Toile effacée ✦';
+});
+
+btnSave.addEventListener('click',()=>{
+  const a=document.createElement('a');
+  a.download='birdsong-'+Date.now()+'.png';
+  a.href=canvas.toDataURL('image/png'); a.click();
+  status.textContent='Image sauvegardée ✦';
+});
+
+document.querySelectorAll('.sdot').forEach(dot=>{
+  dot.addEventListener('click',()=>{
+    document.querySelectorAll('.sdot').forEach(d=>d.classList.remove('on'));
+    dot.classList.add('on');
+    drawStyle=parseInt(dot.dataset.s);
+    specX=0; prevY=null;
+    const names=['Spectrographe','Plumes','Éclosion','Vague'];
+    status.textContent='Style : '+names[drawStyle];
+  });
+});
+</script>
+</body>
+</html>
