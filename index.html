@@ -18,8 +18,8 @@
 
   #ui {
     position:fixed; bottom:0; left:0; right:0;
-    padding:14px 14px 26px;
-    background:linear-gradient(transparent,rgba(0,0,0,0.82) 38%);
+    padding:14px 14px 28px;
+    background:linear-gradient(transparent, rgba(0,0,0,0.85) 40%);
     display:flex; flex-direction:column; align-items:center; gap:10px;
     z-index:20; pointer-events:none;
   }
@@ -27,15 +27,15 @@
   #controls { display:flex; gap:10px; pointer-events:all; flex-wrap:wrap; justify-content:center; }
   .btn {
     font-family:'Cormorant Garamond',serif; font-size:12px; letter-spacing:0.22em; text-transform:uppercase;
-    background:rgba(0,0,0,0.45); border:1px solid rgba(244,196,48,0.35); color:rgba(244,196,48,0.85);
-    padding:9px 22px; cursor:pointer; transition:all 0.22s; -webkit-tap-highlight-color:transparent;
+    background:rgba(0,0,0,0.5); border:1px solid rgba(244,196,48,0.38); color:rgba(244,196,48,0.88);
+    padding:10px 24px; cursor:pointer; transition:all 0.22s; -webkit-tap-highlight-color:transparent; border-radius:1px;
   }
-  .btn:active { background:rgba(244,196,48,0.12); border-color:rgba(244,196,48,0.8); }
-  .btn.lit    { background:rgba(244,196,48,0.14); border-color:#f4c430; box-shadow:0 0 16px rgba(244,196,48,0.22); }
-  .btn.red    { border-color:rgba(255,100,50,0.38); color:rgba(255,120,60,0.82); }
-  .btn.red:active { background:rgba(255,100,50,0.1); }
+  .btn:hover,.btn:active { background:rgba(244,196,48,0.13); border-color:rgba(244,196,48,0.85); }
+  .btn.lit { background:rgba(244,196,48,0.15); border-color:#f4c430; box-shadow:0 0 18px rgba(244,196,48,0.22); }
+  .btn.red { border-color:rgba(255,100,50,0.4); color:rgba(255,130,70,0.88); }
+  .btn.red:hover,.btn.red:active { background:rgba(255,100,50,0.1); border-color:rgba(255,100,50,0.85); }
 
-  #style-row { display:flex; gap:10px; align-items:center; pointer-events:all; flex-wrap:wrap; justify-content:center; }
+  #style-row { display:flex; gap:12px; align-items:center; pointer-events:all; flex-wrap:wrap; justify-content:center; }
   .slbl { font-size:9px; letter-spacing:0.28em; color:rgba(255,255,255,0.22); text-transform:uppercase; }
   .sdot {
     font-family:'Cormorant Garamond',serif; font-size:10px; letter-spacing:0.18em; text-transform:uppercase;
@@ -43,8 +43,8 @@
     border-bottom:1px solid transparent; padding-bottom:1px;
     cursor:pointer; transition:all 0.2s; -webkit-tap-highlight-color:transparent;
   }
-  .sdot.on { color:rgba(244,196,48,0.92); border-color:rgba(244,196,48,0.55); }
-  #status { font-style:italic; font-size:11px; letter-spacing:0.16em; color:rgba(168,237,234,0.48); min-height:16px; text-align:center; max-width:340px; padding:0 10px; }
+  .sdot.on { color:rgba(244,196,48,0.92); border-color:rgba(244,196,48,0.6); }
+  #status { font-style:italic; font-size:11px; letter-spacing:0.16em; color:rgba(168,237,234,0.5); min-height:16px; text-align:center; max-width:360px; padding:0 12px; }
 </style>
 </head>
 <body>
@@ -67,336 +67,354 @@
     <span class="slbl">Style</span>
     <button class="sdot on" data-s="0">Spectrographe</button>
     <button class="sdot"    data-s="1">Plumes</button>
-    <button class="sdot"    data-s="2">Éclosion</button>
+    <button class="sdot"    data-s="2">Eclosion</button>
     <button class="sdot"    data-s="3">Vague</button>
   </div>
-  <div id="status">Appuyer sur Écouter puis autoriser le micro</div>
+  <div id="status">Appuyer sur Ecouter puis autoriser le micro</div>
 </div>
 
 <script>
-// ── Canvas ──────────────────────────────────────────────────────
-const canvas = document.getElementById('c');
-const ctx    = canvas.getContext('2d');
+var canvas = document.getElementById('c');
+var ctx    = canvas.getContext('2d');
 
-function paintBg() {
-  const g = ctx.createLinearGradient(0,0,0,canvas.height);
-  g.addColorStop(0,'#03050e'); g.addColorStop(0.6,'#070c1a'); g.addColorStop(1,'#0a1020');
-  ctx.fillStyle=g; ctx.fillRect(0,0,canvas.width,canvas.height);
-}
-function resize() { canvas.width=window.innerWidth; canvas.height=window.innerHeight; paintBg(); resetSpec(); }
-resize();
-window.addEventListener('resize', resize);
-
-// ── Audio ───────────────────────────────────────────────────────
-let audioCtx, analyser, micSrc, freqData, timeData, bufLen;
-let listening=false, raf, drawStyle=0, lastMark=0;
-
-const btnListen  = document.getElementById('btnListen');
-const btnClear   = document.getElementById('btnClear');
-const btnSave    = document.getElementById('btnSave');
-const status     = document.getElementById('status');
-const hudFreq    = document.getElementById('hud-freq');
-const hudNote    = document.getElementById('hud-note');
-const hudVolFill = document.getElementById('hud-vol-fill');
-
-// ── Couleurs ─────────────────────────────────────────────────────
-function freqToHue(freq) {
-  const lo=Math.log2(80), hi=Math.log2(16000);
-  return Math.max(0,Math.min(1,(Math.log2(Math.max(freq,80))-lo)/(hi-lo)))*300;
-}
-function frgba(freq,a=1){ return `hsla(${freqToHue(freq).toFixed(1)},88%,62%,${a})`; }
-
-const NOTES=['Do','Do♯','Ré','Ré♯','Mi','Fa','Fa♯','Sol','Sol♯','La','La♯','Si'];
-function freqToNote(freq) {
-  if(!freq||freq<=0) return '—';
-  const n=Math.round(12*Math.log2(freq/440))+69;
-  return NOTES[((n%12)+12)%12]+(Math.floor(n/12)-1);
-}
-
-// ── Analyse audio ────────────────────────────────────────────────
-function dominantFreq() {
-  analyser.getByteFrequencyData(freqData);
-  const minBin=Math.ceil(80/(audioCtx.sampleRate/analyser.fftSize));
-  let peak=0,idx=minBin;
-  for(let i=minBin;i<bufLen;i++){ if(freqData[i]>peak){peak=freqData[i];idx=i;} }
-  const p=freqData[Math.max(0,idx-1)], n=freqData[Math.min(bufLen-1,idx+1)];
-  const d=p-2*peak+n;
-  const ref=d!==0?idx-0.5*(n-p)/d:idx;
-  return { freq:ref*(audioCtx.sampleRate/analyser.fftSize), volume:peak/255 };
-}
-function rms() {
-  analyser.getByteTimeDomainData(timeData);
-  let s=0;
-  for(let i=0;i<bufLen;i++){ const v=(timeData[i]-128)/128; s+=v*v; }
-  return Math.sqrt(s/bufLen);
-}
-
-// ── SPECTROGRAPHE RADIAL ─────────────────────────────────────────
-// Le trait part du centre et se propage dans toutes les directions.
-// - La DIRECTION tourne selon le temps (comme une aiguille de boussole)
-// - La DISTANCE au centre = amplitude / volume
-// - La COULEUR = fréquence
-// - L'ANGLE de rotation est influencé par la fréquence (sons aigus → rotation rapide)
-
-// On garde un historique de points pour tracer un trait continu
-let branches; // 4 branches : droite, gauche, haut, bas + diagonales
-let specAngle = 0;      // angle global qui tourne
-let specPoints = [];    // historique du point actif (extrémité du trait)
-let specR = 0;          // rayon courant
+// Variables spectrographe declarees en premier
+var specAngle = 0;
+var specR     = 0;
+var specPts   = [];
 
 function resetSpec() {
   specAngle = 0;
-  specR = 0;
-  specPoints = [];
+  specR     = 0;
+  specPts   = [];
 }
 
-// Rayon max = 45% du plus petit côté
-function maxR() { return Math.min(canvas.width, canvas.height) * 0.45; }
+function maxR() {
+  return Math.min(canvas.width, canvas.height) * 0.44;
+}
 
+function paintBg() {
+  var g = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  g.addColorStop(0,   '#03050e');
+  g.addColorStop(0.6, '#070c1a');
+  g.addColorStop(1,   '#0a1020');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function resize() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  paintBg();
+  resetSpec();
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Audio
+var audioCtx, analyser, micSrc, freqData, timeData, bufLen;
+var listening = false;
+var raf, drawStyle = 0, lastMark = 0;
+var bloomA = 0, waveT = 0;
+
+// UI
+var btnListen  = document.getElementById('btnListen');
+var btnClear   = document.getElementById('btnClear');
+var btnSave    = document.getElementById('btnSave');
+var statusEl   = document.getElementById('status');
+var hudFreq    = document.getElementById('hud-freq');
+var hudNote    = document.getElementById('hud-note');
+var hudVolFill = document.getElementById('hud-vol-fill');
+
+// Couleurs
+function freqToHue(freq) {
+  var lo = Math.log2(80), hi = Math.log2(16000);
+  var t  = Math.max(0, Math.min(1, (Math.log2(Math.max(freq, 80)) - lo) / (hi - lo)));
+  return t * 300;
+}
+function frgba(freq, a) {
+  if (a === undefined) a = 1;
+  return 'hsla(' + freqToHue(freq).toFixed(1) + ',88%,62%,' + a + ')';
+}
+
+var NOTES = ['Do','Do#','Re','Re#','Mi','Fa','Fa#','Sol','Sol#','La','La#','Si'];
+function freqToNote(freq) {
+  if (!freq || freq <= 0) return '-';
+  var n = Math.round(12 * Math.log2(freq / 440)) + 69;
+  return NOTES[((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1);
+}
+
+// Analyse audio
+function dominantFreq() {
+  analyser.getByteFrequencyData(freqData);
+  var minBin = Math.ceil(80 / (audioCtx.sampleRate / analyser.fftSize));
+  var peak = 0, idx = minBin;
+  for (var i = minBin; i < bufLen; i++) {
+    if (freqData[i] > peak) { peak = freqData[i]; idx = i; }
+  }
+  var p = freqData[Math.max(0, idx - 1)];
+  var n = freqData[Math.min(bufLen - 1, idx + 1)];
+  var d = p - 2 * peak + n;
+  var ref = (d !== 0) ? idx - 0.5 * (n - p) / d : idx;
+  return { freq: ref * (audioCtx.sampleRate / analyser.fftSize), volume: peak / 255 };
+}
+
+function getRms() {
+  analyser.getByteTimeDomainData(timeData);
+  var s = 0;
+  for (var i = 0; i < bufLen; i++) {
+    var v = (timeData[i] - 128) / 128;
+    s += v * v;
+  }
+  return Math.sqrt(s / bufLen);
+}
+
+// Spectrographe radial
 function drawSpectrograph(freq, vol, rmsVal) {
-  const cx = canvas.width  * 0.5;
-  const cy = canvas.height * 0.5;
+  var cx = canvas.width  * 0.5;
+  var cy = canvas.height * 0.5;
 
-  // Vitesse de rotation pilotée par la fréquence
-  // Sons graves = rotation lente, aigus = rapide
-  const lo=Math.log2(80), hi=Math.log2(16000);
-  const t=Math.max(0,Math.min(1,(Math.log2(Math.max(freq,80))-lo)/(hi-lo)));
-  const rotSpeed = 0.008 + t * 0.045;  // rad/frame
+  var lo = Math.log2(80), hi = Math.log2(16000);
+  var t  = Math.max(0, Math.min(1, (Math.log2(Math.max(freq, 80)) - lo) / (hi - lo)));
+  var rotSpeed = 0.008 + t * 0.044;
 
-  // Rayon : grossit avec le volume, rétrécit dans le silence
-  if(rmsVal > 0.005 && freq > 80) {
-    specR += (vol * 4.5);              // avance selon le volume
-    if(specR > maxR()) specR = 2;      // repart du centre quand au bord
+  if (rmsVal > 0.005 && freq > 80) {
+    specR += vol * 4.5;
+    if (specR > maxR()) specR = 2;
   } else {
-    specR *= 0.97;                     // rétrécit doucement dans le silence
+    specR *= 0.97;
   }
 
   specAngle += rotSpeed;
 
-  const x = cx + Math.cos(specAngle) * specR;
-  const y = cy + Math.sin(specAngle) * specR;
+  var x = cx + Math.cos(specAngle) * specR;
+  var y = cy + Math.sin(specAngle) * specR;
 
-  // Trace le trait depuis le point précédent
-  if(specPoints.length > 0 && rmsVal > 0.004 && freq > 80) {
-    const prev = specPoints[specPoints.length-1];
-    const hue  = freqToHue(freq);
-    const lw   = 1.2 + vol*9;
+  if (specPts.length > 0 && rmsVal > 0.004 && freq > 80) {
+    var pv  = specPts[specPts.length - 1];
+    var hue = freqToHue(freq);
+    var lw  = 1.2 + vol * 9;
 
-    // Halo
-    ctx.save();
-    ctx.shadowBlur  = 16+vol*30;
-    ctx.shadowColor = `hsla(${hue.toFixed(0)},90%,60%,1)`;
-    ctx.strokeStyle = `hsla(${hue.toFixed(0)},88%,60%,${0.65+vol*0.35})`;
-    ctx.lineWidth   = lw;
-    ctx.lineCap     = 'round';
-    ctx.beginPath();
-    ctx.moveTo(prev.x, prev.y);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-    ctx.restore();
-
-    // Cœur blanc
-    ctx.save();
-    ctx.strokeStyle = `hsla(${hue.toFixed(0)},40%,96%,${0.25+vol*0.6})`;
-    ctx.lineWidth   = Math.max(0.4, lw*0.2);
-    ctx.lineCap     = 'round';
-    ctx.beginPath();
-    ctx.moveTo(prev.x, prev.y);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-    ctx.restore();
-
-    // Symétrie : on trace aussi le point miroir (×4 axes) pour l'effet floraison
-    const mirrors = [
-      { x: cx-(x-cx), y: y             },  // miroir horizontal
-      { x: x,          y: cy-(y-cy)    },  // miroir vertical
-      { x: cx-(x-cx), y: cy-(y-cy)    },  // miroir diagonal
+    var segs = [
+      [x,            y,            pv.x,              pv.y,              lw,       0.65 + vol * 0.3 ],
+      [cx-(x-cx),    y,            cx-(pv.x-cx),      pv.y,              lw * 0.7, 0.4  + vol * 0.25],
+      [x,            cy-(y-cy),    pv.x,              cy-(pv.y-cy),      lw * 0.7, 0.4  + vol * 0.25],
+      [cx-(x-cx),    cy-(y-cy),    cx-(pv.x-cx),      cy-(pv.y-cy),      lw * 0.6, 0.3  + vol * 0.2 ]
     ];
-    const prevMirrors = [
-      { x: cx-(prev.x-cx), y: prev.y          },
-      { x: prev.x,          y: cy-(prev.y-cy)  },
-      { x: cx-(prev.x-cx), y: cy-(prev.y-cy)  },
-    ];
-    mirrors.forEach((m,i)=>{
+
+    for (var s = 0; s < segs.length; s++) {
+      var seg = segs[s];
+      var tx = seg[0], ty = seg[1], fx = seg[2], fy = seg[3], w = seg[4], alpha = seg[5];
+
       ctx.save();
-      ctx.shadowBlur  = 12+vol*20;
-      ctx.shadowColor = `hsla(${hue.toFixed(0)},90%,60%,0.6)`;
-      ctx.strokeStyle = `hsla(${hue.toFixed(0)},88%,60%,${0.4+vol*0.3})`;
-      ctx.lineWidth   = lw*0.7;
+      ctx.shadowBlur  = 16 + vol * 28;
+      ctx.shadowColor = 'hsla(' + hue.toFixed(0) + ',90%,60%,1)';
+      ctx.strokeStyle = 'hsla(' + hue.toFixed(0) + ',88%,60%,' + alpha + ')';
+      ctx.lineWidth   = w;
       ctx.lineCap     = 'round';
       ctx.beginPath();
-      ctx.moveTo(prevMirrors[i].x, prevMirrors[i].y);
-      ctx.lineTo(m.x, m.y);
+      ctx.moveTo(fx, fy);
+      ctx.lineTo(tx, ty);
       ctx.stroke();
       ctx.restore();
-    });
+
+      ctx.save();
+      ctx.strokeStyle = 'hsla(' + hue.toFixed(0) + ',40%,96%,' + (0.22 + vol * 0.5) + ')';
+      ctx.lineWidth   = Math.max(0.4, w * 0.2);
+      ctx.lineCap     = 'round';
+      ctx.beginPath();
+      ctx.moveTo(fx, fy);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
-  // Limite l'historique pour éviter les sauts trop longs
-  specPoints.push({x,y});
-  if(specPoints.length > 3) specPoints.shift();
+  specPts.push({ x: x, y: y });
+  if (specPts.length > 3) specPts.shift();
 
-  // Fondu très léger du fond (laisse des traces)
-  ctx.fillStyle='rgba(3,5,14,0.008)';
-  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle = 'rgba(3,5,14,0.008)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Petit point central toujours visible
   ctx.beginPath();
-  ctx.arc(cx, cy, 2, 0, Math.PI*2);
-  ctx.fillStyle='rgba(244,196,48,0.3)';
+  ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(244,196,48,0.35)';
   ctx.fill();
 }
 
-// ── Autres styles ─────────────────────────────────────────────────
+// Plumes
 function freqToY(freq) {
-  const lo=Math.log2(80),hi=Math.log2(16000);
-  const t=1-Math.max(0,Math.min(1,(Math.log2(Math.max(freq,80))-lo)/(hi-lo)));
-  return canvas.height*0.04+t*canvas.height*0.72;
+  var lo = Math.log2(80), hi = Math.log2(16000);
+  var t  = 1 - Math.max(0, Math.min(1, (Math.log2(Math.max(freq, 80)) - lo) / (hi - lo)));
+  return canvas.height * 0.04 + t * canvas.height * 0.72;
 }
 
-function drawFeather(freq,vol) {
-  const y=freqToY(freq)+(Math.random()-0.5)*35, x=Math.random()*canvas.width;
-  const len=14+vol*65, ang=(Math.random()-0.5)*1.0-Math.PI/2;
-  ctx.save(); ctx.translate(x,y); ctx.rotate(ang);
-  ctx.globalAlpha=0.65+vol*0.3; ctx.strokeStyle=frgba(freq,0.9); ctx.lineWidth=0.8;
-  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,-len); ctx.stroke();
-  const barbs=5+Math.floor(vol*9);
-  for(let i=0;i<barbs;i++){
-    const bt=i/barbs, bl=Math.sin(bt*Math.PI)*len*0.28;
-    ctx.globalAlpha=0.2+(1-bt)*0.35;
-    for(const s of[1,-1]){
-      ctx.beginPath(); ctx.moveTo(0,-len*bt);
-      ctx.quadraticCurveTo(s*bl*0.5,-len*bt-bl*0.15,s*bl,-len*bt);
+function drawFeather(freq, vol) {
+  var y   = freqToY(freq) + (Math.random() - 0.5) * 35;
+  var x   = Math.random() * canvas.width;
+  var len = 14 + vol * 65;
+  var ang = (Math.random() - 0.5) * 1.0 - Math.PI / 2;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+  ctx.globalAlpha = 0.65 + vol * 0.3;
+  ctx.strokeStyle = frgba(freq, 0.9); ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -len); ctx.stroke();
+  var barbs = 5 + Math.floor(vol * 9);
+  for (var i = 0; i < barbs; i++) {
+    var bt = i / barbs, bl = Math.sin(bt * Math.PI) * len * 0.28;
+    ctx.globalAlpha = 0.2 + (1 - bt) * 0.35;
+    for (var si = -1; si <= 1; si += 2) {
+      ctx.beginPath();
+      ctx.moveTo(0, -len * bt);
+      ctx.quadraticCurveTo(si * bl * 0.5, -len * bt - bl * 0.15, si * bl, -len * bt);
       ctx.stroke();
     }
   }
   ctx.restore();
 }
 
-let bloomA=0;
-function drawBloom(freq,vol) {
-  const y=freqToY(freq)+(Math.random()-0.5)*40, x=Math.random()*canvas.width;
-  const r=5+vol*45, petals=4+Math.floor(freq/1100);
-  bloomA+=0.08;
-  ctx.save(); ctx.translate(x,y); ctx.rotate(bloomA);
-  ctx.globalAlpha=0.6+vol*0.35;
-  for(let i=0;i<petals;i++){
-    ctx.save(); ctx.rotate((i/petals)*Math.PI*2);
-    ctx.beginPath(); ctx.ellipse(0,-r*0.5,r*0.17,r*0.5,0,0,Math.PI*2);
-    ctx.fillStyle=frgba(freq,0.75); ctx.fill(); ctx.restore();
+// Eclosion
+function drawBloom(freq, vol) {
+  var y      = freqToY(freq) + (Math.random() - 0.5) * 40;
+  var x      = Math.random() * canvas.width;
+  var r      = 5 + vol * 45;
+  var petals = 4 + Math.floor(freq / 1100);
+  bloomA += 0.08;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(bloomA);
+  ctx.globalAlpha = 0.6 + vol * 0.35;
+  for (var i = 0; i < petals; i++) {
+    ctx.save(); ctx.rotate((i / petals) * Math.PI * 2);
+    ctx.beginPath();
+    ctx.ellipse(0, -r * 0.5, r * 0.17, r * 0.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = frgba(freq, 0.75); ctx.fill();
+    ctx.restore();
   }
-  ctx.beginPath(); ctx.arc(0,0,r*0.12,0,Math.PI*2);
-  ctx.fillStyle='rgba(255,245,100,0.95)'; ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.12, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,245,100,0.95)'; ctx.fill();
   ctx.restore();
 }
 
-let waveT=0;
-function drawWave(freq,vol) {
-  const cy=freqToY(freq), amp=7+vol*38;
-  const span=100+vol*70, cx2=Math.random()*(canvas.width-span)+span/2;
-  waveT+=0.07;
+// Vague
+function drawWave(freq, vol) {
+  var cy   = freqToY(freq);
+  var amp  = 7 + vol * 38;
+  var span = 100 + vol * 70;
+  var cx2  = Math.random() * (canvas.width - span) + span / 2;
+  waveT += 0.07;
   ctx.save();
-  ctx.globalAlpha=0.5+vol*0.4;
-  ctx.strokeStyle=frgba(freq,1); ctx.lineWidth=1+vol*2.5;
-  ctx.shadowBlur=10+vol*18; ctx.shadowColor=frgba(freq,0.8);
+  ctx.globalAlpha = 0.5 + vol * 0.4;
+  ctx.strokeStyle = frgba(freq, 1);
+  ctx.lineWidth   = 1 + vol * 2.5;
+  ctx.shadowBlur  = 10 + vol * 18;
+  ctx.shadowColor = frgba(freq, 0.8);
   ctx.beginPath();
-  for(let i=-span;i<=span;i++){
-    const wx=cx2+i;
-    const wy=cy+Math.sin((i*freq/1600)+waveT)*amp*(1-(Math.abs(i)/span)**1.6);
-    i===-span?ctx.moveTo(wx,wy):ctx.lineTo(wx,wy);
+  for (var i = -span; i <= span; i++) {
+    var wx = cx2 + i;
+    var wy = cy + Math.sin((i * freq / 1600) + waveT) * amp * (1 - Math.pow(Math.abs(i) / span, 1.6));
+    if (i === -span) ctx.moveTo(wx, wy); else ctx.lineTo(wx, wy);
   }
   ctx.stroke(); ctx.restore();
 }
 
-// ── Boucle principale ─────────────────────────────────────────────
+// Boucle principale
 function loop(ts) {
-  if(!listening) return;
-  raf=requestAnimationFrame(loop);
-  const {freq,volume}=dominantFreq();
-  const r=rms();
+  if (!listening) return;
+  raf = requestAnimationFrame(loop);
 
-  hudVolFill.style.width=Math.min(100,r*380)+'%';
-  if(freq>80&&r>0.008){
-    hudFreq.textContent=Math.round(freq)+' Hz';
-    hudNote.textContent=freqToNote(freq);
+  var df  = dominantFreq();
+  var freq = df.freq, volume = df.volume;
+  var r   = getRms();
+
+  hudVolFill.style.width = Math.min(100, r * 380) + '%';
+  if (freq > 80 && r > 0.008) {
+    hudFreq.textContent = Math.round(freq) + ' Hz';
+    hudNote.textContent = freqToNote(freq);
   } else {
-    hudFreq.textContent='— Hz'; hudNote.textContent='—';
+    hudFreq.textContent = '- Hz';
+    hudNote.textContent = '-';
   }
 
-  if(drawStyle===0) {
+  if (drawStyle === 0) {
     drawSpectrograph(freq, volume, r);
-  } else if(freq>80&&r>0.012&&ts-lastMark>32) {
-    lastMark=ts;
-    if(drawStyle===1) drawFeather(freq,volume);
-    else if(drawStyle===2) drawBloom(freq,volume);
-    else if(drawStyle===3) drawWave(freq,volume);
+  } else if (freq > 80 && r > 0.012 && ts - lastMark > 32) {
+    lastMark = ts;
+    if      (drawStyle === 1) drawFeather(freq, volume);
+    else if (drawStyle === 2) drawBloom(freq, volume);
+    else if (drawStyle === 3) drawWave(freq, volume);
   }
 }
 
-// ── Démarrage micro ───────────────────────────────────────────────
-async function toggleListen() {
-  if(listening){
-    listening=false; cancelAnimationFrame(raf);
-    try{micSrc.disconnect();}catch(e){}
-    try{audioCtx.close();}catch(e){}
-    micSrc=null; audioCtx=null;
-    btnListen.textContent='Écouter'; btnListen.classList.remove('lit');
-    hudVolFill.style.width='0%';
-    status.textContent='En pause — toile préservée';
+// Micro
+function toggleListen() {
+  if (listening) {
+    listening = false;
+    cancelAnimationFrame(raf);
+    try { micSrc.disconnect(); }  catch(e) {}
+    try { audioCtx.close(); }     catch(e) {}
+    micSrc = null; audioCtx = null;
+    btnListen.textContent = 'Ecouter';
+    btnListen.classList.remove('lit');
+    hudVolFill.style.width = '0%';
+    statusEl.textContent = 'En pause - toile preservee';
     return;
   }
-  status.textContent='Demande d\'accès au microphone…';
-  try {
-    const stream=await navigator.mediaDevices.getUserMedia({
-      audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false
-    });
-    audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-    analyser=audioCtx.createAnalyser();
-    analyser.fftSize=8192; analyser.smoothingTimeConstant=0.8;
-    bufLen=analyser.frequencyBinCount;
-    freqData=new Uint8Array(bufLen); timeData=new Uint8Array(bufLen);
-    micSrc=audioCtx.createMediaStreamSource(stream);
+
+  statusEl.textContent = "Demande d'acces au microphone...";
+
+  navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    video: false
+  }).then(function(stream) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize               = 8192;
+    analyser.smoothingTimeConstant = 0.8;
+    bufLen   = analyser.frequencyBinCount;
+    freqData = new Uint8Array(bufLen);
+    timeData = new Uint8Array(bufLen);
+    micSrc   = audioCtx.createMediaStreamSource(stream);
     micSrc.connect(analyser);
-    listening=true;
-    btnListen.textContent='Pause'; btnListen.classList.add('lit');
-    status.textContent='À l\'écoute — sifflez ou laissez les oiseaux peindre 🎶';
+    listening = true;
+    btnListen.textContent = 'Pause';
+    btnListen.classList.add('lit');
+    statusEl.textContent = 'A l\'ecoute - sifflez ou laissez les oiseaux peindre';
     requestAnimationFrame(loop);
-  } catch(err) {
-    console.error(err);
-    if(err.name==='NotAllowedError'||err.name==='PermissionDeniedError')
-      status.textContent='⚠ Permission refusée — autorisez le micro dans les réglages';
-    else if(err.name==='NotFoundError')
-      status.textContent='⚠ Aucun microphone détecté';
+  }).catch(function(err) {
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')
+      statusEl.textContent = 'Permission refusee - autorisez le micro dans les reglages';
+    else if (err.name === 'NotFoundError')
+      statusEl.textContent = 'Aucun microphone detecte';
     else
-      status.textContent='⚠ Erreur : '+err.name;
-  }
+      statusEl.textContent = 'Erreur : ' + err.name;
+  });
 }
 
-// ── Boutons ───────────────────────────────────────────────────────
+// Boutons
 btnListen.addEventListener('click', toggleListen);
 
-btnClear.addEventListener('click',()=>{
-  resetSpec(); paintBg();
-  status.textContent='Toile effacée ✦';
+btnClear.addEventListener('click', function() {
+  resetSpec();
+  paintBg();
+  statusEl.textContent = 'Toile effacee';
 });
 
-btnSave.addEventListener('click',()=>{
-  const a=document.createElement('a');
-  a.download='birdsong-'+Date.now()+'.png';
-  a.href=canvas.toDataURL('image/png'); a.click();
-  status.textContent='Image sauvegardée ✦';
+btnSave.addEventListener('click', function() {
+  var a = document.createElement('a');
+  a.download = 'birdsong-' + Date.now() + '.png';
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+  statusEl.textContent = 'Image sauvegardee';
 });
 
-document.querySelectorAll('.sdot').forEach(dot=>{
-  dot.addEventListener('click',()=>{
-    document.querySelectorAll('.sdot').forEach(d=>d.classList.remove('on'));
-    dot.classList.add('on');
-    drawStyle=parseInt(dot.dataset.s);
+var dots = document.querySelectorAll('.sdot');
+for (var di = 0; di < dots.length; di++) {
+  dots[di].addEventListener('click', function() {
+    for (var i = 0; i < dots.length; i++) dots[i].classList.remove('on');
+    this.classList.add('on');
+    drawStyle = parseInt(this.dataset.s);
     resetSpec();
-    const names=['Spectrographe','Plumes','Éclosion','Vague'];
-    status.textContent='Style : '+names[drawStyle];
+    var names = ['Spectrographe','Plumes','Eclosion','Vague'];
+    statusEl.textContent = 'Style : ' + names[drawStyle];
   });
-});
+}
 </script>
 </body>
 </html>
